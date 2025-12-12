@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MQTT LED Control (Global)</title>
+<style>
+  body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; background-color: #f4f4f4;}
+  .container { max-width: 400px; margin: 0 auto; padding: 20px; background-color: white; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+  h1 { color: #2c3e50; }
+  .button {
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px;
+    margin: 10px 5px;
+    cursor: pointer;
+    border-radius: 25px;
+    transition: background-color 0.3s ease;
+    width: 150px;
+  }
+  .on-btn { background-color: #2ecc71; } 
+  .off-btn { background-color: #e74c3c; } 
+  #connection-status { margin-top: 10px; font-size: 14px; color: #7f8c8d; }
+  #status-display { 
+    margin-top: 20px; 
+    font-size: 30px; 
+    font-weight: bold; 
+    transition: color 0.5s;
+  }
+  .LED-ON { color: #2ecc71; }
+  .LED-OFF { color: #e74c3c; }
+</style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Global MQTT LED Control</h1>
+    <div id="connection-status">Connecting to MQTT Broker...</div>
+    <div id="status-display" class="LED-OFF">LED: UNKNOWN</div>
+    
+    <button class="button on-btn" onclick="publishMessage('ON')">TURN ON</button>
+    <button class="button off-btn" onclick="publishMessage('OFF')">TURN OFF</button>
+    
+    <p style="margin-top: 30px;"><small>Broker: broker.hivemq.com:8000</small></p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js" type="text/javascript"></script>
+
+<script>
+    // ข้อมูลการเชื่อมต่อ MQTT
+    const host = "broker.hivemq.com";
+    const port = 8000; // WebSockets Port
+    const clientId = "WebClient-" + parseInt(Math.random() * 100000); 
+
+    // Topics (ต้องตรงกับในโค้ด ESP32)
+    const controlTopic = "esp32/led/control"; 
+    const statusTopic = "esp32/led/status";   
+
+    let client = null;
+
+    function startConnect() {
+        client = new Paho.MQTT.Client(host, port, clientId);
+        client.onConnectionLost = onConnectionLost;
+        client.onMessageArrived = onMessageArrived;
+        
+        client.connect({
+            onSuccess: onConnect,
+            onFailure: onFailure,
+            cleanSession: true // การเชื่อมต่อครั้งใหม่จะเริ่มต้นใหม่เสมอ
+        });
+        document.getElementById('connection-status').innerText = "Connecting...";
+    }
+
+    function onFailure(responseObject) {
+        document.getElementById('connection-status').innerText = "Connection Failed! Retrying in 5s...";
+        console.log("Connection Failed: " + responseObject.errorMessage);
+        setTimeout(startConnect, 5000); 
+    }
+
+    function onConnectionLost(responseObject) {
+        if (responseObject.errorCode !== 0) {
+            document.getElementById('connection-status').innerText = "Connection Lost! Reconnecting...";
+            startConnect(); 
+        }
+    }
+
+    function onConnect() {
+        document.getElementById('connection-status').innerText = "Connected to HiveMQ Broker!";
+        client.subscribe(statusTopic); // Subscribe เพื่อรับสถานะจาก ESP32
+    }
+
+    function onMessageArrived(message) {
+        const payload = message.payloadString;
+        
+        if (message.destinationName === statusTopic) {
+            const display = document.getElementById('status-display');
+            display.innerText = "LED: " + payload;
+
+            display.classList.remove('LED-ON', 'LED-OFF');
+            if (payload === 'ON') {
+                display.classList.add('LED-ON');
+            } else if (payload === 'OFF') {
+                display.classList.add('LED-OFF');
+            }
+        }
+    }
+
+    function publishMessage(command) {
+        if (client && client.isConnected()) {
+            const message = new Paho.MQTT.Message(command);
+            message.destinationName = controlTopic;
+            message.retained = false;
+            client.send(message);
+            console.log(`Published ${command} to ${controlTopic}`);
+        } else {
+            alert('Not connected to MQTT Broker. Please wait.');
+        }
+    }
+
+    window.onload = startConnect;
+
+</script>
+
+</body>
+</html>
